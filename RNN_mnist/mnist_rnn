@@ -7,15 +7,16 @@ Created on Wed Dec 28 21:58:44 2016
 """
 from __future__ import print_function
 import tensorflow as tf
+import numpy as np
 
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("./", one_hot=True)
 
-chunk_size=28  #特征维度，字符图片的每一行看成输入特征
-chunk_n=28     #每张字符图片共有28行
+chunk_size=28
+chunk_n=28
 
-rnn_size=256  # 隐藏单元个数(number of lstm cell)
-n_output_layer = 10 #output classes
+rnn_size=256
+n_output_layer = 10
 
 X = tf.placeholder(tf.float32, [None, chunk_n, chunk_size])
 Y = tf.placeholder(tf.float32)
@@ -34,7 +35,7 @@ def recuurent_neural_network(data):
     output = tf.add(tf.matmul(outputs[-1], layer['w_']), layer['b_'])
     return output
 
-batch_size = 1000
+batch_size = 100
 
 def train_neural_network(X, Y):
     predict = recuurent_neural_network(X)
@@ -54,12 +55,12 @@ def train_neural_network(X, Y):
                 _, c = sess.run([optimizer, cost_fun], feed_dict={X:x, Y:y})
 #                print(c)
                 epoch_loss += c
-            print("epoch :" , epoch  ,  "--- loss: " , epoch_loss)
+            print(epoch," : ", epoch_loss)
             losses.append(epoch_loss)
         corrent = tf.equal(tf.argmax(predict, 1), tf.argmax(Y, 1))
         accuracy = tf.reduce_mean(tf.cast(corrent, tf.float32))
         print("accuracy: {}".format(accuracy.eval({X:mnist.test.images.reshape(-1, chunk_n, chunk_size), Y:mnist.test.labels})))
         
         
-if __name__ == "__main__":
-    train_neural_network(X, Y)
+        
+train_neural_network(X, Y)
