@@ -1,0 +1,113 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan  3 21:08:16 2017
+
+@author: charl
+"""
+
+from __future__ import print_function
+import tensorflow as tf
+import numpy as np
+import time
+from tensorflow.examples.tutorials.mnist import input_data
+
+#mnist = input_data.read_data_sets('./MNIST_data/',one_hot=True)
+mnist = input_data.read_data_sets("./", one_hot=True)
+
+learning_rate = 0.001
+training_iters = 10000
+batch_size = 32
+disply_step = 10
+
+#network parameters
+n_input = 28
+n_step = 28
+n_hidden = 128
+n_class = 10
+n_layer = 3
+
+#tf Graph input
+x = tf.placeholder("float32", [None, n_step, n_input])
+#rnn(lstm) every cell include state(c_t), output(h_t)
+#istate = tf.placeholder(np.float32, [None, 2*n_hidden*n_layer])
+istate = tf.placeholder("float32",[None,2*n_hidden*n_layer])
+y = tf.placeholder(np.float32, [None, n_class])
+
+#define weight
+weights = {'hidden':tf.Variable(tf.random_normal([n_input,n_hidden])),
+'out':tf.Variable(tf.random_normal([n_hidden,n_class]))}
+biases = {'hidden':tf.Variable(tf.random_normal([n_hidden])),
+'out':tf.Variable(tf.random_normal([n_class]))}
+
+
+#define LSTM
+def RNN(_X, _istate, _weight,_biases):
+#    _X = tf.transpose(_X, [1,0,2])
+#    _X = tf.reshape(_X, [-1, n_input])
+#    _X = tf.split(axis=0, num_or_size_splits=n_step, value=_X)
+    print(_X.shape)
+    cell = tf.contrib.rnn.BasicLSTMCell(n_hidden)
+    
+    multi_cell =tf.contrib.rnn.MultiRNNCell([cell]*n_layer) 
+    
+    
+    outputs, states = tf.nn.dynamic_rnn(multi_cell, _X, initial_state=_istate, dtype=tf.float32)#, initial_state=_istate,time_major=False)
+    
+    last = tf.gather(outputs, int(outputs.get_shape()[0]) - 1) #dynamic_rnn's output is a tensor
+    return tf.matmul(last, _weight['out']) + _biases['out']
+
+pred = RNN(x, istate, weights, biases)
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+
+correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+
+
+
+with tf.Session as sess:
+    sess.run(tf.initialize_all_variables())
+    step = 1
+    total_time = 0.0
+    start_time = time.time()
+    while step*batch_size:
+        batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+        
+        batch_xs = batch_xs.reshape((batch_size, n_step, n_input))
+        
+        sess.run(optimizer, feed_dict={x:batch_xs, y: batch_ys, istate:np.zeros((batch_size, 2*n_hidden,n_layer))})
+        if step % disply_step == 0:
+            loss = sess.run(cost, feed_dict={x:batch_xs, y: batch_ys, istate:np.zeros((batch_size, 2*n_hidden,n_layer))})
+            acc = sess.run(accuracy, feed_dict={x:batch_xs,y:batch_ys,istate:np.zeros((batch_size,2*n_hidden*n_layer))})
+            print("Iter " + str(step*batch_size) + "loss " + "{:.6f}".format(loss) + "Tacc=" + "{:5f}".format(acc))
+            step += 1
+total_time = total_time + time.time() - start_time
+#print 
+
+
+    
+test_len = 256
+test_data = mnist.test.images[:test_len].reshape((-1, n_step, n_input))
+test_label = mnist.test.labels[:test_len]
+print("Testing Accuracy:", sess.run(accuracy, feed_dict={x: test_data, y: test_label,
+                                                             istate: np.zeros((test_len, 2*n_hidden*n_layer))}))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
