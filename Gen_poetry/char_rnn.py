@@ -54,7 +54,7 @@ poetrys_vector = [ list(map(to_num, poetry)) for poetry in poetrys]
 #....]
 
 
-batch_size = 128
+batch_size = 1
 n_block = len(poetrys_vector)//batch_size
 x_batch=[]
 y_batch=[]
@@ -79,7 +79,7 @@ for i in range(n_block):
 input_data = tf.placeholder(tf.int32, [batch_size, None])
 output_targets = tf.placeholder(tf.int32, [batch_size, None])
 
-def neural_network(model='lstm', rnn_size=128, num_layer=2):
+def neural_network(model='lstm', rnn_size=128, num_layer=5):
     if model == 'rnn':
         cell_fun = tf.contrib.rnn.BasicRNNCell
     elif model == 'gru':
@@ -91,15 +91,90 @@ def neural_network(model='lstm', rnn_size=128, num_layer=2):
     
     initial_state = cell.zero_state(batch_size, tf.float32)
     
-    with tf.VariableScope("rnnlm"):
+    with tf.variable_scope("rnnlm"):
         softmax_w = tf.get_variable("softmax_w",[rnn_size, len(words) + 1])
         softmax_b = tf.get_variable("softmax_b",[len(words) + 1])
         with tf.device("/cpu:0"):
             embedding = tf.get_variable("embedding",[len(words)+1, rnn_size])
-            inputs = tf.nn.embedding_lookup(embedding, inputs)
-        
+            inputs = tf.nn.embedding_lookup(embedding, input_data)
+            
+    outputs, last_state = tf.contrib.rnn.rnn.dynamic_rnn(cell, inputs, initial_state=initial_state,scope='rnnlm')
+    
+    output = tf.reshape(outputs,[-1, rnn_size])
+    
+    logits = tf.matmul(output, softmax_w) + softmax_b
+    probs = tf.nn.softmax(logits)
+    
+    
+    return logits, last_state, probs, cell, initial_state
 
+def train_nerual_network():
+    logits, last_state, _,_,_ = neural_network()
+    targets = tf.reshape(output_targets, [-1])
+#    loss = tf.contrib.seq2seq.seq2seq_loss([logits], [targets], [tf.ones_like(targets, dtype=tf.float32)], len(words))
+    loss = tf.contrib.legacy_seq2seq.sequence_loss_by_example([logits], [targets], [tf.ones_like(targets, dtype=tf.float32)], len(words))
+    
+    cost = tf.reduce_mean(loss)
+    learning_rate = tf.Variable(0.0, trainable=False)
+    tvars = tf.trainable_variables()
+    grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), 5)
+    optimizer = tf.train.AdamOptimizer(learning_rate)
+    train_op = optimizer.apply_gradients(zip(grads, tvars))
+ 
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+ 
+        saver = tf.train.Saver(tf.global_variables())
+ 
+        for epoch in range(1, 60):
+            sess.run(tf.assign(learning_rate, 0.002 * (0.97 ** epoch)))
+            n = 0
+            for batche in range(n_block):
+                train_loss, _ , _ = sess.run([cost, last_state, train_op], feed_dict={input_data: x_batch[n], output_targets: y_batch[n]})
+                n += 1
+                print(epoch, batche, train_loss)
+            if epoch % 20 == 0:
+                saver.save(sess, 'poetry.module', global_step=epoch)
+ 
 
+train_nerual_network()
+
+def gen_poetry():
+    def to_word(weights):
+        t = np.cumsum(weights)
+        s = np.sum(weights)
+        sample = int(np.searchsorted(t, np.random.rand(1)*s))
+        return words[sample]
+ 
+    _, last_state, probs, cell, initial_state = neural_network()
+ 
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+ 
+        saver = tf.train.Saver(tf.global_variables())
+#        saver.restore(sess, 'poetry.module-49')
+        module_file = tf.train.latest_checkpoint('.')
+        #print(module_file)
+        saver.restore(sess, module_file)
+        state_ = sess.run(cell.zero_state(1, tf.float32))
+ 
+        x = np.array([list(map(word_num_map.get, '['))])
+        [probs_, state_] = sess.run([probs, last_state], feed_dict={input_data: x, initial_state: state_})
+        word = to_word(probs_)
+        #word = words[np.argmax(probs_)]
+        poem = ''
+        while word != ']':
+            poem += word
+            x = np.zeros((1,1))
+            x[0,0] = word_num_map[word]
+            [probs_, state_] = sess.run([probs, last_state], feed_dict={input_data: x, initial_state: state_})
+            word = to_word(probs_)
+            #word = words[np.argmax(probs_)]
+    return poem
+ 
+#print(gen_poetry())
+    
+    
 
 
 
